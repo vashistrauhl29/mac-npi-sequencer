@@ -148,6 +148,19 @@ def create_gantt(tasks, title):
     df_chart["Start_dt"] = base_start_time + pd.to_timedelta(df_chart["Start_Sec"], unit='s')
     df_chart["Finish_dt"] = base_start_time + pd.to_timedelta(df_chart["Finish_Sec"], unit='s')
     
+    # Calculate duration in minutes to filter text
+    df_chart["Duration_Min"] = (df_chart["Finish_Sec"] - df_chart["Start_Sec"]) / 60
+    
+    # --- Smart Labelling Logic ---
+    # Only show text if the block is wide enough (e.g., > 15 mins)
+    # This prevents "Setup" labels from overlapping when bars are tiny.
+    def smart_label(row):
+        if row["Duration_Min"] < 15: 
+            return "" # Hide text for short blocks
+        return row["Label"]
+    
+    df_chart["Display_Text"] = df_chart.apply(smart_label, axis=1)
+    
     # Color Map
     color_map = {"Production": "#22c55e", "Changeover": "#ef4444"}
     
@@ -155,27 +168,34 @@ def create_gantt(tasks, title):
         df_chart,
         x_start="Start_dt",
         x_end="Finish_dt",
-        y="Type", # Use Type to categorize rows
+        y="Type", 
         color="Type",
         color_discrete_map=color_map,
-        text="Label", # Show Model Name inside the bar
-        hover_data={"Model": True, "Quantity": True, "Label": False, "Type": False}
+        text="Display_Text", # Use our new filtered text column
+        hover_data={"Model": True, "Quantity": True, "Label": False, "Type": False, "Display_Text": False, "Duration_Min": False}
     )
     
     # Add "End of Shift" Line
     fig.add_vline(x=shift_end_time.timestamp() * 1000, line_width=2, line_dash="dash", line_color="white", annotation_text="End of Shift")
 
-    fig.update_yaxes(visible=False) # Hide Y axis labels (cleaner look)
+    fig.update_yaxes(visible=False) 
     fig.update_xaxes(
-        tickformat="%H:%M", # Show 08:00, 09:00, etc.
+        tickformat="%H:%M", 
         title_text="Time (Shift Start: 08:00)"
     )
+    
+    # --- Layout Fixes for Clutter ---
+    fig.update_traces(textposition='inside', insidetextanchor='middle')
+    
     fig.update_layout(
         title=title,
         showlegend=True,
         height=250,
         margin=dict(l=20, r=20, t=40, b=20),
-        legend=dict(orientation="h", y=1.1)
+        legend=dict(orientation="h", y=1.1),
+        # This forces text to hide if it doesn't fit the bar
+        uniformtext_minsize=10, 
+        uniformtext_mode='hide'
     )
     return fig
 
