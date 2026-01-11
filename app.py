@@ -180,10 +180,16 @@ def create_gantt(tasks, title):
     df_chart["Start_dt"] = base_start_time + pd.to_timedelta(df_chart["Start_Sec"], unit='s')
     df_chart["Finish_dt"] = base_start_time + pd.to_timedelta(df_chart["Finish_Sec"], unit='s')
     
-    # Smart Labelling: Hide text if block is too small
+    # --- UPGRADED LABELLING LOGIC ---
     def smart_label(row):
-        if row["Duration_Min"] < 10: 
+        # 1. Always hide text for "Changeover" (Red Bars) to reduce clutter
+        if row["Type"] == "Changeover":
+            return ""
+        
+        # 2. For Production, hide text if the block is too short (< 15 mins)
+        if row["Duration_Min"] < 15: 
             return "" 
+            
         return row["Label"]
     
     df_chart["Display_Text"] = df_chart.apply(smart_label, axis=1)
@@ -205,13 +211,13 @@ def create_gantt(tasks, title):
     fig.update_traces(
         textposition='inside', 
         insidetextanchor='middle',
-        textfont=dict(size=11, color='white') # Slightly smaller font
+        textfont=dict(size=11, color='white') 
     )
     fig.update_layout(
         title=title, showlegend=True, height=280,
         margin=dict(l=20, r=20, t=40, b=20),
         legend=dict(orientation="h", y=1.1),
-        uniformtext_minsize=8, uniformtext_mode='hide' # Hide text if it doesn't fit
+        uniformtext_minsize=8, uniformtext_mode='hide'
     )
     return fig
 
