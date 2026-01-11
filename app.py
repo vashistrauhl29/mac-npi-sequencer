@@ -279,4 +279,13 @@ st.dataframe(
     hide_index=True
 )
 
-st.caption(f"Prototype built for NPI Capacity Planning | {datetime.now().year}")
+st.markdown(
+    """
+    <div style="text-align: center; color: grey; font-size: 12px;">
+        Prototype built for NPI Capacity Planning by 
+        <a href="https://www.linkedin.com/in/vashistrahul29/" target="_blank" style="color: grey; text-decoration: none;"><b>Rahul Vashisht</b></a> 
+        | 2026
+    </div>
+    """,
+    unsafe_allow_html=True
+)
