@@ -86,7 +86,9 @@ mac_models = [
 ]
 priorities = ["Hot (VP Demo)", "Standard"]
 
-# --- THE FIX: Removed faulty callback, added direct state update ---
+# --- THE FIX ---
+# 1. Removed 'on_change' (prevents crashes)
+# 2. We assign the output to 'edited_df'
 edited_df = st.data_editor(
     st.session_state.input_data,
     num_rows="dynamic",
@@ -98,11 +100,11 @@ edited_df = st.data_editor(
         "Material On-Hand": st.column_config.NumberColumn("Material On-Hand", min_value=0, step=1, required=True, help="Constraint: Max units we have parts for"),
         "Cycle Time (Sec)": st.column_config.NumberColumn("Cycle Time (Sec)", min_value=1, step=1, required=True)
     },
-    key="editor_key" # We keep the key, but remove 'on_change'
+    key="editor_key" 
 )
 
-# 🚀 CRITICAL FIX: Sync session state manually after edit
-# This ensures the new data is saved without crashing the app
+# 3. CRITICAL: Manually sync state immediately after the widget
+# This forces the new data to stick instantly (fixing the double-click bug)
 st.session_state.input_data = edited_df
 
 clean_df = edited_df.dropna(how="any")
