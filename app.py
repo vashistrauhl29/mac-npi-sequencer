@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, time
 
 st.set_page_config(layout="wide", page_title=" NPI Ramp Sequencer")
 
-st.title(" Mac NPI Ramp Sequencer")
+st.title("🍎 Mac NPI Ramp Sequencer")
 
 # Sidebar Configuration
 with st.sidebar:
