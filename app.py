@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, time
 st.set_page_config(layout="wide", page_title="🍎 Mac NPI Ramp Sequencer")
 
 # --- Session State Initialization ---
+# 1. Initialize Data
 if "input_data" not in st.session_state:
     st.session_state.input_data = pd.DataFrame({
         "Model Name": ["MacBook Air 13 (M3)", "MacBook Pro 14 (M4)", "MacBook Air 13 (M3)", "MacBook Pro 14 (M4)"],
@@ -16,6 +17,26 @@ if "input_data" not in st.session_state:
         "Cycle Time (Sec)": [45, 60, 45, 60]
     })
 
+# 2. Initialize Widget States (Fixes Reset Bug)
+if "shift_hours" not in st.session_state:
+    st.session_state.shift_hours = 10.0
+if "changeover_min" not in st.session_state:
+    st.session_state.changeover_min = 15
+
+# --- Callback Function to Reset Everything ---
+def reset_defaults():
+    # Reset Data
+    st.session_state.input_data = pd.DataFrame({
+        "Model Name": ["MacBook Air 13 (M3)", "MacBook Pro 14 (M4)", "MacBook Air 13 (M3)", "MacBook Pro 14 (M4)"],
+        "Priority": ["Standard", "Standard", "Hot (VP Demo)", "Standard"],
+        "Demand Qty": [40, 25, 10, 15],
+        "Material On-Hand": [50, 20, 5, 20],
+        "Cycle Time (Sec)": [45, 60, 45, 60]
+    })
+    # Reset Widgets
+    st.session_state.shift_hours = 10.0
+    st.session_state.changeover_min = 15
+
 # --- Main Title ---
 st.title("🍎 Mac NPI Ramp Sequencer")
 st.markdown("Optimize mixed-model lines by balancing **Efficiency**, **Priority**, and **Material Constraints (CTB)**.")
@@ -24,18 +45,25 @@ st.markdown("Optimize mixed-model lines by balancing **Efficiency**, **Priority*
 with st.sidebar:
     st.header("⚙️ Configuration")
     
-    if st.button("🔄 Reset to Simulation"):
-        st.session_state.input_data = pd.DataFrame({
-            "Model Name": ["MacBook Air 13 (M3)", "MacBook Pro 14 (M4)", "MacBook Air 13 (M3)", "MacBook Pro 14 (M4)"],
-            "Priority": ["Standard", "Standard", "Hot (VP Demo)", "Standard"],
-            "Demand Qty": [40, 25, 10, 15],
-            "Material On-Hand": [50, 20, 5, 20],
-            "Cycle Time (Sec)": [45, 60, 45, 60]
-        })
-        st.rerun()
+    # Reset Button with Callback (Fixes Issue #1)
+    st.button("🔄 Reset to Simulation", on_click=reset_defaults)
 
-    shift_duration_hours = st.number_input("Shift Duration (Hours)", min_value=1.0, max_value=24.0, value=10.0, step=0.5)
-    changeover_penalty_minutes = st.slider("Changeover Penalty (Minutes)", min_value=5, max_value=60, value=15, step=1)
+    # Widgets linked to Session State
+    shift_duration_hours = st.number_input(
+        "Shift Duration (Hours)", 
+        min_value=1.0, 
+        max_value=24.0, 
+        step=0.5,
+        key="shift_hours" # Links to st.session_state.shift_hours
+    )
+    
+    changeover_penalty_minutes = st.slider(
+        "Changeover Penalty (Minutes)", 
+        min_value=5, 
+        max_value=60, 
+        step=1,
+        key="changeover_min" # Links to st.session_state.changeover_min
+    )
     
     today = datetime.now().date()
     start_time = time(8, 0)
@@ -80,16 +108,18 @@ if clean_df.empty:
     st.stop()
 
 # --- Constraint Logic: Calculate Feasible vs Shortage ---
-# This logic bridges Supply Chain and Operations
 clean_df["Feasible Qty"] = clean_df[["Demand Qty", "Material On-Hand"]].min(axis=1)
 clean_df["Shortage"] = clean_df["Demand Qty"] - clean_df["Feasible Qty"]
 clean_df["Is_Short"] = clean_df["Shortage"] > 0
 
-# Alert for Hot Shortages (The "Managerial Insight")
+# --- Alert Logic Upgrade (Fixes Issue #2) ---
 hot_shortages = clean_df[(clean_df["Priority"].str.contains("Hot")) & (clean_df["Is_Short"])]
+
 if not hot_shortages.empty:
-    for index, row in hot_shortages.iterrows():
-        st.error(f"🚨 CRITICAL RISK: '{row['Model Name']}' (Hot) is short by {row['Shortage']} units due to material constraint!")
+    # Aggregated Error Message
+    count = len(hot_shortages)
+    models_list = ", ".join(hot_shortages["Model Name"].unique())
+    st.error(f"🚨 CRITICAL RISK: {count} 'Hot' Lot(s) Short ({models_list}). Check Material Constraints below.")
 
 # --- Scheduling Logic Functions ---
 
@@ -108,7 +138,6 @@ def calculate_schedule(df, optimize=False):
         df["Model_Rank"] = df["Model Name"].apply(lambda x: order.index(x))
         
         # 3. MERGE: Group by Priority + Model
-        # Note: We sum 'Feasible Qty' because that's all we can physically build
         process_df = df.groupby(["Priority", "Priority_Rank", "Model Name", "Model_Rank", "Cycle Time (Sec)"], as_index=False).agg({
             "Feasible Qty": "sum",
             "Demand Qty": "sum"
