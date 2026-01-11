@@ -3,12 +3,8 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta, time
 
-# --- Page Config (Forced Light Mode to fix Dropdown Contrast) ---
-st.set_page_config(
-    layout="wide", 
-    page_title="🍎 Mac NPI Ramp Sequencer",
-    initial_sidebar_state="expanded"
-)
+# --- Page Config ---
+st.set_page_config(layout="wide", page_title="🍎 Mac NPI Ramp Sequencer")
 
 # --- Session State Initialization ---
 # 1. Initialize Data
@@ -21,21 +17,15 @@ if "input_data" not in st.session_state:
         "Cycle Time (Sec)": [45, 60, 45, 60]
     })
 
-# 2. Initialize Widget States
+# 2. Initialize Widget States (Fixes Reset Bug)
 if "shift_hours" not in st.session_state:
     st.session_state.shift_hours = 10.0
 if "changeover_min" not in st.session_state:
     st.session_state.changeover_min = 15
 
-# --- Callbacks (THE FIX for Double-Input Bug) ---
-def update_data():
-    """
-    This runs immediately when the user edits the table.
-    It syncs the editor state to the input_data state BEFORE the page reruns.
-    """
-    st.session_state.input_data = st.session_state.editor_key
-
+# --- Reset Function ---
 def reset_defaults():
+    # Reset Data
     st.session_state.input_data = pd.DataFrame({
         "Model Name": ["MacBook Air 13 (M3)", "MacBook Pro 14 (M4)", "MacBook Air 13 (M3)", "MacBook Pro 14 (M4)"],
         "Priority": ["Standard", "Standard", "Hot (VP Demo)", "Standard"],
@@ -43,6 +33,7 @@ def reset_defaults():
         "Material On-Hand": [50, 20, 5, 20],
         "Cycle Time (Sec)": [45, 60, 45, 60]
     })
+    # Reset Widgets
     st.session_state.shift_hours = 10.0
     st.session_state.changeover_min = 15
 
@@ -54,7 +45,7 @@ st.markdown("Optimize mixed-model lines by balancing **Efficiency**, **Priority*
 with st.sidebar:
     st.header("⚙️ Configuration")
     
-    # Reset Button
+    # Reset Button with Callback
     st.button("🔄 Reset to Simulation", on_click=reset_defaults)
 
     # Widgets linked to Session State
@@ -63,7 +54,7 @@ with st.sidebar:
         min_value=1.0, 
         max_value=24.0, 
         step=0.5,
-        key="shift_hours"
+        key="shift_hours" # Links to st.session_state.shift_hours
     )
     
     changeover_penalty_minutes = st.slider(
@@ -71,7 +62,7 @@ with st.sidebar:
         min_value=5, 
         max_value=60, 
         step=1,
-        key="changeover_min"
+        key="changeover_min" # Links to st.session_state.changeover_min
     )
     
     today = datetime.now().date()
@@ -95,7 +86,7 @@ mac_models = [
 ]
 priorities = ["Hot (VP Demo)", "Standard"]
 
-# --- THE FIX: Data Editor with on_change Callback ---
+# --- THE FIX: Removed faulty callback, added direct state update ---
 edited_df = st.data_editor(
     st.session_state.input_data,
     num_rows="dynamic",
@@ -103,13 +94,16 @@ edited_df = st.data_editor(
     column_config={
         "Model Name": st.column_config.SelectboxColumn("Model Name", width="medium", options=mac_models, required=True),
         "Priority": st.column_config.SelectboxColumn("Priority", width="small", options=priorities, required=True),
-        "Demand Qty": st.column_config.NumberColumn("Demand Qty", min_value=1, step=1, required=True),
-        "Material On-Hand": st.column_config.NumberColumn("Material On-Hand", min_value=0, step=1, required=True),
+        "Demand Qty": st.column_config.NumberColumn("Demand Qty", min_value=1, step=1, required=True, help="Target build count"),
+        "Material On-Hand": st.column_config.NumberColumn("Material On-Hand", min_value=0, step=1, required=True, help="Constraint: Max units we have parts for"),
         "Cycle Time (Sec)": st.column_config.NumberColumn("Cycle Time (Sec)", min_value=1, step=1, required=True)
     },
-    key="editor_key",         # Unique key for the widget
-    on_change=update_data     # Callback to fix the "Double Input" bug
+    key="editor_key" # We keep the key, but remove 'on_change'
 )
+
+# 🚀 CRITICAL FIX: Sync session state manually after edit
+# This ensures the new data is saved without crashing the app
+st.session_state.input_data = edited_df
 
 clean_df = edited_df.dropna(how="any")
 
@@ -117,7 +111,7 @@ if clean_df.empty:
     st.warning("⚠️ Please add at least one row of data.")
     st.stop()
 
-# --- Constraint Logic ---
+# --- Constraint Logic: Calculate Feasible vs Shortage ---
 clean_df["Feasible Qty"] = clean_df[["Demand Qty", "Material On-Hand"]].min(axis=1)
 clean_df["Shortage"] = clean_df["Demand Qty"] - clean_df["Feasible Qty"]
 clean_df["Is_Short"] = clean_df["Shortage"] > 0
@@ -126,6 +120,7 @@ clean_df["Is_Short"] = clean_df["Shortage"] > 0
 hot_shortages = clean_df[(clean_df["Priority"].str.contains("Hot")) & (clean_df["Is_Short"])]
 
 if not hot_shortages.empty:
+    # Aggregated Error Message
     count = len(hot_shortages)
     models_list = ", ".join(hot_shortages["Model Name"].unique())
     st.error(f"🚨 CRITICAL RISK: {count} 'Hot' Lot(s) Short ({models_list}). Check Material Constraints below.")
@@ -137,27 +132,33 @@ def calculate_schedule(df, optimize=False):
     current_time_seconds = 0
     
     if optimize:
+        # 1. Define Priority Rank (Hot = 0, Standard = 1)
         priority_map = {"Hot (VP Demo)": 0, "Standard": 1}
         df = df.copy()
         df["Priority_Rank"] = df["Priority"].map(priority_map)
         
+        # 2. Define Model Rank (Order of appearance)
         order = list(dict.fromkeys(df["Model Name"]))
         df["Model_Rank"] = df["Model Name"].apply(lambda x: order.index(x))
         
+        # 3. MERGE: Group by Priority + Model
         process_df = df.groupby(["Priority", "Priority_Rank", "Model Name", "Model_Rank", "Cycle Time (Sec)"], as_index=False).agg({
             "Feasible Qty": "sum",
             "Demand Qty": "sum"
         })
         
+        # 4. Sort: Priority first, then Model
         process_df = process_df.sort_values(by=["Priority_Rank", "Model_Rank"]).reset_index(drop=True)
     else:
+        # Scenario A: FIFO
         process_df = df.copy()
 
     for i, row in process_df.iterrows():
         model = row["Model Name"]
-        qty = row["Feasible Qty"]
+        qty = row["Feasible Qty"]  # WE ONLY BUILD WHAT WE HAVE
         cycle_time = row["Cycle Time (Sec)"]
         
+        # Changeover Logic
         is_changeover = False
         if i > 0:
             prev_model = process_df.iloc[i-1]["Model Name"]
@@ -176,6 +177,7 @@ def calculate_schedule(df, optimize=False):
             })
             current_time_seconds += changeover_penalty_seconds
         
+        # Production Block
         production_time = qty * cycle_time
         production_min = production_time / 60
         
@@ -193,14 +195,19 @@ def calculate_schedule(df, optimize=False):
     
     return tasks, current_time_seconds, process_df
 
+# Calculate Scenarios
 tasks_a, total_time_a, df_a_ordered = calculate_schedule(clean_df, optimize=False)
 tasks_b, total_time_b, df_b_ordered = calculate_schedule(clean_df, optimize=True)
 
 # --- Metrics ---
 time_saved_seconds = total_time_a - total_time_b
 time_saved_minutes = time_saved_seconds / 60
-total_shortage = clean_df["Shortage"].sum()
 
+# Calculate Total Shortage
+total_shortage = clean_df["Shortage"].sum()
+total_feasible = clean_df["Feasible Qty"].sum()
+
+# Utilization Logic
 prod_time_b = sum([t["Finish_Sec"] - t["Start_Sec"] for t in tasks_b if t["Type"] == "Production"])
 utilization_b = (prod_time_b / total_time_b * 100) if total_time_b > 0 else 0
 utilization_a = (sum([t["Finish_Sec"] - t["Start_Sec"] for t in tasks_a if t["Type"] == "Production"]) / total_time_a * 100) if total_time_a > 0 else 0
