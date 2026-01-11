@@ -213,11 +213,23 @@ def create_gantt(tasks, title):
         insidetextanchor='middle',
         textfont=dict(size=11, color='white') 
     )
+    
+    # --- LAYOUT FIXES FOR OBSTRUCTION ---
     fig.update_layout(
-        title=title, showlegend=True, height=280,
-        margin=dict(l=20, r=20, t=40, b=20),
-        legend=dict(orientation="h", y=1.1),
-        uniformtext_minsize=8, uniformtext_mode='hide'
+        title=title, 
+        showlegend=True, 
+        height=280,
+        # Increased Top Margin (t=60) to give Legend space
+        margin=dict(l=20, r=20, t=60, b=20),
+        legend=dict(
+            orientation="h", 
+            y=1.1, 
+            # Transparent Background fixes the "Black Box" issue
+            bgcolor="rgba(0,0,0,0)",
+            title_text="" # Removes the word "Type" to save space
+        ),
+        uniformtext_minsize=8, 
+        uniformtext_mode='hide'
     )
     return fig
 
