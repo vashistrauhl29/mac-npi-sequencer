@@ -1,0 +1,17 @@
+name: Keep Streamlit App Alive
+
+on:
+  schedule:
+    # Run every 30 minutes (adjust as needed, but don't abuse it)
+    - cron: '*/30 * * * *'
+  # Allows you to run this workflow manually from the Actions tab for testing
+  workflow_dispatch:
+
+jobs:
+  ping_app:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake up Streamlit App
+        # Replace the URL below with your actual App URL
+        run: |
+          curl -I https://mac-npi-sequencer-lfjkucxeaoczm3uwy7e6k2.streamlit.app/
